@@ -41,6 +41,8 @@ mod tests {
     fn health_command_requires_ok_true() {
         let args = CliArgs {
             server: "http://127.0.0.1:18789".to_owned(),
+            auth_token: None,
+            auth_password: None,
             json: false,
             command: CliCommand::Health,
         };
@@ -59,6 +61,8 @@ mod tests {
     fn info_command_returns_payload() {
         let args = CliArgs {
             server: "http://127.0.0.1:18789".to_owned(),
+            auth_token: None,
+            auth_password: None,
             json: true,
             command: CliCommand::Info,
         };
@@ -77,6 +81,8 @@ mod tests {
     fn rpc_command_rejects_non_object_params() {
         let args = CliArgs {
             server: "http://127.0.0.1:18789".to_owned(),
+            auth_token: None,
+            auth_password: None,
             json: true,
             command: CliCommand::Rpc {
                 method: "system.healthz".to_owned(),

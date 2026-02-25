@@ -20,17 +20,40 @@ pub trait GatewayClient {
 
 pub struct HttpGatewayClient {
     base_url: String,
+    auth_token: Option<String>,
+    auth_password: Option<String>,
     client: Client,
 }
 
 impl HttpGatewayClient {
     pub fn new(base_url: impl Into<String>) -> Result<Self, CliError> {
+        Self::new_with_auth(base_url, None, None)
+    }
+
+    pub fn new_with_auth(
+        base_url: impl Into<String>,
+        auth_token: Option<String>,
+        auth_password: Option<String>,
+    ) -> Result<Self, CliError> {
         let base_url = normalize_base_url(base_url.into())?;
+        let auth_token = normalize_optional_secret(auth_token);
+        let auth_password = normalize_optional_secret(auth_password);
+        if auth_token.is_some() && auth_password.is_some() {
+            return Err(CliError::InvalidAuth(
+                "provide only one of --auth-token or --auth-password".to_owned(),
+            ));
+        }
+
         let client = Client::builder()
             .build()
             .map_err(|error| CliError::Transport(error.to_string()))?;
 
-        Ok(Self { base_url, client })
+        Ok(Self {
+            base_url,
+            auth_token,
+            auth_password,
+            client,
+        })
     }
 
     fn get(&self, path: &str) -> Result<Value, CliError> {
@@ -60,6 +83,12 @@ impl HttpGatewayClient {
         let (mut socket, _) = connect(ws_url.as_str())
             .map_err(|error| CliError::Transport(format!("websocket connect failed: {error}")))?;
 
+        let auth = match (&self.auth_token, &self.auth_password) {
+            (Some(token), None) => json!({ "token": token }),
+            (None, Some(password)) => json!({ "password": password }),
+            _ => Value::Null,
+        };
+
         send_json(
             &mut socket,
             &json!({
@@ -75,7 +104,8 @@ impl HttpGatewayClient {
                         "version": env!("CARGO_PKG_VERSION"),
                         "platform": "cli",
                         "mode": "operator"
-                    }
+                    },
+                    "auth": auth,
                 }
             }),
         )?;
@@ -196,6 +226,17 @@ fn normalize_base_url(input: String) -> Result<String, CliError> {
     Ok(without_trailing)
 }
 
+fn normalize_optional_secret(value: Option<String>) -> Option<String> {
+    value.and_then(|raw| {
+        let normalized = raw.trim();
+        if normalized.is_empty() {
+            None
+        } else {
+            Some(normalized.to_owned())
+        }
+    })
+}
+
 fn normalize_path(path: &str) -> String {
     if path.starts_with('/') {
         path.to_owned()
@@ -222,7 +263,7 @@ mod tests {
     use tungstenite::{accept, Message};
 
     use crate::{
-        client::{normalize_base_url, websocket_url, HttpGatewayClient},
+        client::{normalize_base_url, normalize_optional_secret, websocket_url, HttpGatewayClient},
         CliError, GatewayClient,
     };
 
@@ -245,6 +286,27 @@ mod tests {
             "ws://127.0.0.1:18789/ws"
         );
         assert_eq!(websocket_url("https://example.com"), "wss://example.com/ws");
+    }
+
+    #[test]
+    fn normalize_optional_secret_trims_and_drops_blank_values() {
+        assert_eq!(
+            normalize_optional_secret(Some("  token-123  ".to_owned())).as_deref(),
+            Some("token-123")
+        );
+        assert!(normalize_optional_secret(Some("   ".to_owned())).is_none());
+        assert!(normalize_optional_secret(None).is_none());
+    }
+
+    #[test]
+    fn constructor_rejects_token_and_password_together() {
+        let result = HttpGatewayClient::new_with_auth(
+            "http://127.0.0.1:18789",
+            Some("token-a".to_owned()),
+            Some("password-b".to_owned()),
+        );
+
+        assert!(matches!(result, Err(CliError::InvalidAuth(_))));
     }
 
     #[test]
@@ -342,6 +404,59 @@ mod tests {
             Err(CliError::Protocol(message)) => assert!(message.contains("bad params")),
             other => panic!("expected protocol error, got {other:?}"),
         }
+
+        let _ = server.join();
+    }
+
+    #[test]
+    fn rpc_connect_frame_includes_token_auth_when_configured() {
+        let listener = TcpListener::bind("127.0.0.1:0").expect("listener should bind");
+        let addr = listener
+            .local_addr()
+            .expect("listener should expose local addr");
+
+        let server = thread::spawn(move || {
+            let (stream, _) = listener.accept().expect("connection should arrive");
+            let mut ws = accept(stream).expect("websocket handshake should succeed");
+
+            let connect_frame = read_frame(&mut ws);
+            assert_eq!(connect_frame["method"], "connect");
+            assert_eq!(connect_frame["params"]["auth"]["token"], "token-123");
+
+            ws.send(Message::Text(
+                json!({
+                    "type": "res",
+                    "id": "connect-1",
+                    "ok": true,
+                    "payload": { "type": "hello-ok" }
+                })
+                .to_string()
+                .into(),
+            ))
+            .expect("connect response should be sent");
+
+            let _ = read_frame(&mut ws);
+            ws.send(Message::Text(
+                json!({
+                    "type": "res",
+                    "id": "rpc-1",
+                    "ok": true,
+                    "payload": { "ok": true }
+                })
+                .to_string()
+                .into(),
+            ))
+            .expect("rpc response should be sent");
+        });
+
+        let client = HttpGatewayClient::new_with_auth(
+            format!("http://{addr}"),
+            Some("token-123".to_owned()),
+            None,
+        )
+        .expect("client should build");
+        let result = client.rpc("health", json!({})).expect("rpc should succeed");
+        assert_eq!(result["ok"], true);
 
         let _ = server.join();
     }

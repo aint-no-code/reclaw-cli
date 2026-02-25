@@ -11,6 +11,12 @@ pub struct CliArgs {
     pub server: String,
 
     #[arg(long)]
+    pub auth_token: Option<String>,
+
+    #[arg(long)]
+    pub auth_password: Option<String>,
+
+    #[arg(long)]
     pub json: bool,
 
     #[command(subcommand)]
@@ -46,6 +52,9 @@ pub enum CliError {
 
     #[error("invalid rpc params: {0}")]
     InvalidParams(String),
+
+    #[error("invalid auth options: {0}")]
+    InvalidAuth(String),
 }
 
 pub fn run_with_client(args: &CliArgs, client: &dyn GatewayClient) -> Result<Value, CliError> {
@@ -112,6 +121,8 @@ mod tests {
     fn rpc_command_accepts_object_params() {
         let args = CliArgs {
             server: "http://127.0.0.1:18789".to_owned(),
+            auth_token: None,
+            auth_password: None,
             json: false,
             command: CliCommand::Rpc {
                 method: "system.healthz".to_owned(),
@@ -127,6 +138,8 @@ mod tests {
     fn rpc_command_rejects_invalid_json() {
         let args = CliArgs {
             server: "http://127.0.0.1:18789".to_owned(),
+            auth_token: None,
+            auth_password: None,
             json: false,
             command: CliCommand::Rpc {
                 method: "system.healthz".to_owned(),

@@ -14,6 +14,7 @@
 cargo run -- --server http://127.0.0.1:18789 health
 cargo run -- --server http://127.0.0.1:18789 info --json
 cargo run -- --server http://127.0.0.1:18789 rpc system.healthz --params '{}'
+cargo run -- --server http://127.0.0.1:18789 --auth-token '<token>' rpc status --params '{}'
 ```
 
 ## Quality Gates

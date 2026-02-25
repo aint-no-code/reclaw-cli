@@ -15,7 +15,12 @@ fn main() -> ExitCode {
 
 fn run() -> Result<(), String> {
     let args = CliArgs::parse();
-    let client = HttpGatewayClient::new(args.server.clone()).map_err(|error| error.to_string())?;
+    let client = HttpGatewayClient::new_with_auth(
+        args.server.clone(),
+        args.auth_token.clone(),
+        args.auth_password.clone(),
+    )
+    .map_err(|error| error.to_string())?;
     let output = run_with_client(&args, &client).map_err(|error| error.to_string())?;
 
     if args.json {
