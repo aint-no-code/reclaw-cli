@@ -25,7 +25,7 @@ pub enum CliCommand {
     /// Query /info.
     Info,
 
-    /// Invoke a JSON-RPC method over POST /.
+    /// Invoke a JSON-RPC method over WebSocket RPC.
     Rpc {
         method: String,
         #[arg(long, default_value = "{}")]

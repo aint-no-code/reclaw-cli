@@ -6,7 +6,7 @@
 
 - `health`: query `/healthz`
 - `info`: query `/info`
-- `rpc`: invoke JSON-RPC method over `POST /`
+- `rpc`: invoke JSON-RPC method over WebSocket (`/ws`) with protocol `connect` handshake
 
 ## Run
 
